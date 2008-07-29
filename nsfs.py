@@ -1,4 +1,11 @@
 #!/usr/bin/python
+#
+# July 2008: Bryan Newbold <bryannewbold.com>
+#            Proof of concept with a little help from xmp.py
+#
+# Simplified BSD License: http://www.opensource.org/licenses/bsd-license.php
+#
+# See README.nsfs
 
 from time import time
 from StringIO import StringIO
@@ -7,7 +14,6 @@ import stat    # for file properties
 import os      # for filesystem modes (O_RDONLY, etc)
 import errno   # for error number codes (ENOENT, etc)
                # - note: these must be returned as negatives
-
 
 # pull in some spaghetti to make this stuff work without fuse-py being installed
 try:

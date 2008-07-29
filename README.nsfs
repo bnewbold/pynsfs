@@ -1,0 +1,150 @@
+=============================================
+Python Namespace File System
+=============================================
+
+:Author:    Bryan Newbold
+:Date:      July 2008
+:URL:       http://git.bryannewbold.com?p=pynsfs
+
+.. contents:: 
+
+This is an experimental implementation of a python namespace as a virtual
+file system, implemented using the python bindings for fusefs on unix.
+
+At this point only the global namespace of the filesystem instance itself is
+accessible, and only limited access is available to that. If anything goes
+wrong it can cause a hard lock and system crash; don't leave it running and
+don't try to write anything substantial.
+
+The source code can be checked out from the above URL.
+
+Features
+---------------
+An example session goes like::
+
+    snark# ls /mnt/python/
+
+    snark# python nsfs.py /mnt/python/
+    *** init complete
+    let's go!
+
+    snark# cd /mnt/python/
+
+    snark# ls -l
+    total 6
+    -r--r--r--  1 root  wheel  30 Dec 31  1969 DefaultStat
+    -r--r--r--  1 root  wheel  33 Dec 31  1969 DefaultStatVfs
+    -r--r--r--  1 root  wheel  19 Dec 31  1969 Fuse
+    -r--r--r--  1 root  wheel  30 Dec 31  1969 NamespaceFS
+    -r--r--r--  1 root  wheel  27 Dec 31  1969 NsfsFile
+    -r--r--r--  1 root  wheel  17 Dec 31  1969 StringIO
+    drwxr-xr-x  2 root  wheel   0 Dec 31  1969 __builtins__
+    -r--r--r--  1 root  wheel   4 Dec 31  1969 __doc__
+    -r--r--r--  1 root  wheel   7 Dec 31  1969 __file__
+    -r--r--r--  1 root  wheel   8 Dec 31  1969 __name__
+    drwxr-xr-x  2 root  wheel   0 Dec 31  1969 _find_fuse_parts
+    drwxr-xr-x  2 root  wheel   0 Dec 31  1969 errno
+    drwxr-xr-x  2 root  wheel   0 Dec 31  1969 fuse
+    -r--r--r--  1 root  wheel  29 Dec 31  1969 main
+    drwxr-xr-x  2 root  wheel   0 Dec 31  1969 os
+    drwxr-xr-x  2 root  wheel   0 Dec 31  1969 stat
+    -r--r--r--  1 root  wheel  24 Dec 31  1969 time
+
+    snark# ls stat/
+    ST_ATIME        S_ENFMT         S_IMODE         S_ISDIR         S_IWRITE
+    ST_CTIME        S_IEXEC         S_IREAD         S_ISFIFO        S_IWUSR
+    ST_DEV          S_IFBLK         S_IRGRP         S_ISGID         S_IXGRP
+    ST_GID          S_IFCHR         S_IROTH         S_ISLNK         S_IXOTH
+    ST_INO          S_IFDIR         S_IRUSR         S_ISREG         S_IXUSR
+    ST_MODE         S_IFIFO         S_IRWXG         S_ISSOCK        __builtins__
+    ST_MTIME        S_IFLNK         S_IRWXO         S_ISUID         __doc__
+    ST_NLINK        S_IFMT          S_IRWXU         S_ISVTX         __file__
+    ST_SIZE         S_IFREG         S_ISBLK         S_IWGRP         __name__
+    ST_UID          S_IFSOCK        S_ISCHR         S_IWOTH
+
+    snark# cat time 
+    <built-in function time>
+
+    snark# echo " Hello Python" >> os/__name__
+
+    snark# cat os/__name__
+    os Hello Python
+
+    snark# rm time
+
+    snark# ls
+    DefaultStat             __builtins__            fuse
+    DefaultStatVfs          __doc__                 main
+    Fuse                    __file__                os
+    NamespaceFS             __name__                stat
+    NsfsFile                _find_fuse_parts
+    StringIO                errno
+
+    snark# ln __nameofos__ os/__name__ 
+    ln: __nameofos__: No such file or directory
+
+    snark# ln os/__name__ __nameofos__
+
+    snark# cat __nameofos__ 
+    os Hello Python
+
+    snark# cd ..
+
+    snark# umount /mnt/python/
+
+The root directory is the global namespace; modules are available as 
+subdirectories and all other objects are accessible as files. Strings can
+be appended to; all other "files" are readonly and return their string
+representation. "Files" can be deleted; "directories" can not. Hard links to
+files are possible.
+
+Requirements
+---------------
+
+This was developed and has only been tested on FreeBSD 7.0 with Python 2.5.1 
+version 0.2 of the python-fuse bindings. 
+
+* `FUSE Filesystem`__ installed and configured on a compatible operating system
+* Recent version of Python__
+* `FUSE Python Bindings`__
+
+Once everything is installed and configured, the script can just be run
+as root; no installation necessary.
+
+__ http://fuse.sourceforge.net/
+__ http://python.org
+__ http://fuse.sourceforge.net/wiki/index.php/FusePython
+
+Usage
+--------------
+Try ``# python nsfs.py -h`` to get a list of general FUSE options. A simple
+mount command would look like::
+
+    # python nsfs.py /mnt/python
+
+To unmount::
+
+    # umount /mnt/python
+
+I like to run in foreground, single threaded, with debug info::
+
+    # python nsfs.py -dsf /mnt/python
+
+Really only basic command line tools work because they don't check for many
+attributes; try ``echo "blah" >> file``, ``cat file``, ``df -h``, ``ls -l`` etc.
+
+TODO
+-----------------------
+Functions taking simple arguments (or no arguments) could be implemented as
+character devices; ``function_name.doc``, ``function_name.repr``, etc could 
+give meta-information.
+
+File of the form ``__thing__`` should be renamed ``.thing``.
+
+New files should be allowed and saved as strings.
+
+CHANGELOG
+-----------------------
+
+July 28, 2008
+  First implementation
