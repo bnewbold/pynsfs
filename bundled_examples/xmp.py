@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 
-# July 2008: Bryan Newbold <bryannewbold.com>
-#            Based on xmp.py
+#    Copyright (C) 2001  Jeff Epler  <jepler@unpythonic.dhs.org>
+#    Copyright (C) 2006  Csaba Henk  <csaba.henk@creo.hu>
+#
+#    This program can be distributed under the terms of the GNU LGPL.
+#    See the file COPYING.
+#
 
 import os, sys
 from errno import *
@@ -35,7 +39,7 @@ def flag2mode(flags):
     return m
 
 
-class PyNamespace(Fuse):
+class Xmp(Fuse):
 
     def __init__(self, *args, **kw):
 
@@ -44,7 +48,7 @@ class PyNamespace(Fuse):
         # do stuff to set up your filesystem here, if you want
         #import thread
         #thread.start_new_thread(self.mythread, ())
-        #self.root = '/'
+        self.root = '/'
 
 #    def mythread(self):
 #
@@ -58,48 +62,49 @@ class PyNamespace(Fuse):
 #            print "mythread: ticking"
 
     def getattr(self, path):
-        return locals()[path].__repr__
+        return os.lstat("." + path)
 
     def readlink(self, path):
-        return str(path)
+        return os.readlink("." + path)
 
     def readdir(self, path, offset):
         for e in os.listdir("." + path):
             yield fuse.Direntry(e)
 
     def unlink(self, path):
-        del locals()[path]
+        os.unlink("." + path)
 
     def rmdir(self, path):
-        del locals()[path]
+        os.rmdir("." + path)
 
     def symlink(self, path, path1):
-        locals()[path1] = locals()[path]
+        os.symlink(path, "." + path1)
 
     def rename(self, path, path1):
-        locals()[path1] = locals()[path]
-        del locals()[path]
+        os.rename("." + path, "." + path1)
 
     def link(self, path, path1):
-        locals()[path1] = locals()[path]
+        os.link("." + path, "." + path1)
 
     def chmod(self, path, mode):
-        return -EPFNOSUPPORT
+        os.chmod("." + path, mode)
 
     def chown(self, path, user, group):
-        return -EPFNOSUPPORT
+        os.chown("." + path, user, group)
 
     def truncate(self, path, len):
-        return -EPFNOSUPPORT
+        f = open("." + path, "a")
+        f.truncate(len)
+        f.close()
 
     def mknod(self, path, mode, dev):
-        return -EPFNOSUPPORT
+        os.mknod("." + path, mode, dev)
 
     def mkdir(self, path, mode):
-        return -EPFNOSUPPORT
+        os.mkdir("." + path, mode)
 
     def utime(self, path, times):
-        return -EPFNOSUPPORT
+        os.utime("." + path, times)
 
 #    The following utimens method would do the same as the above utime method.
 #    We can't make it better though as the Python stdlib doesn't know of
@@ -150,47 +155,52 @@ class PyNamespace(Fuse):
             - f_files - total number of file inodes
             - f_ffree - nunber of free file inodes
         """
-        rval = os.statvfs(".")
-        rval[3] = len(locals())
-        rval[5] = len(locals())
-        return rval
+
+        return os.statvfs(".")
 
     def fsinit(self):
-        #os.chdir(self.root)
-        pass
+        os.chdir(self.root)
 
-    class PyNamespaceFile(object):
+    class XmpFile(object):
 
         def __init__(self, path, flags, *mode):
-            self.fobject = locals()[path]
-            self.fstr = StringIO(str(self.fobject))
+            self.file = os.fdopen(os.open("." + path, flags, *mode),
+                                  flag2mode(flags))
+            self.fd = self.file.fileno()
 
         def read(self, length, offset):
-            return self.fstr.read(length)
+            self.file.seek(offset)
+            return self.file.read(length)
 
         def write(self, buf, offset):
-            self.fstr.seek(offset)
-            self.fstr.write(buf)
+            self.file.seek(offset)
+            self.file.write(buf)
             return len(buf)
 
         def release(self, flags):
-            self.fstr.close()
+            self.file.close()
 
         def _fflush(self):
-            if 'w' in self.fstr.mode or 'a' in self.fstr.mode:
-                self.fstr.flush()
+            if 'w' in self.file.mode or 'a' in self.file.mode:
+                self.file.flush()
 
         def fsync(self, isfsyncfile):
-            pass
+            self._fflush()
+            if isfsyncfile and hasattr(os, 'fdatasync'):
+                os.fdatasync(self.fd)
+            else:
+                os.fsync(self.fd)
 
         def flush(self):
-            pass
+            self._fflush()
+            # cf. xmp_flush() in fusexmp_fh.c
+            os.close(os.dup(self.fd))
 
         def fgetattr(self):
-            pass
+            return os.fstat(self.fd)
 
         def ftruncate(self, len):
-            self.fstr.truncate(len)
+            self.file.truncate(len)
 
         def lock(self, cmd, owner, **kw):
             # The code here is much rather just a demonstration of the locking
@@ -217,26 +227,25 @@ class PyNamespace(Fuse):
 
             # Convert fcntl-ish lock parameters to Python's weird
             # lockf(3)/flock(2) medley locking API...
-            return -EOPNOTSUPP
-            #op = { fcntl.F_UNLCK : fcntl.LOCK_UN,
-            #       fcntl.F_RDLCK : fcntl.LOCK_SH,
-            #       fcntl.F_WRLCK : fcntl.LOCK_EX }[kw['l_type']]
-            #if cmd == fcntl.F_GETLK:
-            #    return -EOPNOTSUPP
-            #elif cmd == fcntl.F_SETLK:
-            #    if op != fcntl.LOCK_UN:
-            #        op |= fcntl.LOCK_NB
-            #elif cmd == fcntl.F_SETLKW:
-            #    pass
-            #else:
-            #    return -EINVAL
+            op = { fcntl.F_UNLCK : fcntl.LOCK_UN,
+                   fcntl.F_RDLCK : fcntl.LOCK_SH,
+                   fcntl.F_WRLCK : fcntl.LOCK_EX }[kw['l_type']]
+            if cmd == fcntl.F_GETLK:
+                return -EOPNOTSUPP
+            elif cmd == fcntl.F_SETLK:
+                if op != fcntl.LOCK_UN:
+                    op |= fcntl.LOCK_NB
+            elif cmd == fcntl.F_SETLKW:
+                pass
+            else:
+                return -EINVAL
 
-            #fcntl.lockf(self.fd, op, kw['l_start'], kw['l_len'])
+            fcntl.lockf(self.fd, op, kw['l_start'], kw['l_len'])
 
 
     def main(self, *a, **kw):
 
-        self.file_class = self.PyNamespaceFile
+        self.file_class = self.XmpFile
 
         return Fuse.main(self, *a, **kw)
 
@@ -244,23 +253,24 @@ class PyNamespace(Fuse):
 def main():
 
     usage = """
-Presents a python namespace as a filesystem for aesthetic reasons
+Userspace nullfs-alike: mirror the filesystem tree from some point on.
+
 """ + Fuse.fusage
 
-    server = PyNamespace(version="%prog " + fuse.__version__,
+    server = Xmp(version="%prog " + fuse.__version__,
                  usage=usage,
                  dash_s_do='setsingle')
 
-    #server.parser.add_option(mountopt="root", metavar="PATH", default='/',
-    #                         help="mirror filesystem from under PATH [default: %default]")
-    #server.parse(values=server, errex=1)
+    server.parser.add_option(mountopt="root", metavar="PATH", default='/',
+                             help="mirror filesystem from under PATH [default: %default]")
+    server.parse(values=server, errex=1)
 
-    #try:
-    #    if server.fuse_args.mount_expected():
-    #        os.chdir(server.root)
-    #except OSError:
-    #    print >> sys.stderr, "can't enter root of underlying filesystem"
-    #    sys.exit(1)
+    try:
+        if server.fuse_args.mount_expected():
+            os.chdir(server.root)
+    except OSError:
+        print >> sys.stderr, "can't enter root of underlying filesystem"
+        sys.exit(1)
 
     server.main()
 
